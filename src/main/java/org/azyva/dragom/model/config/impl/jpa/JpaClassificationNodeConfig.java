@@ -45,8 +45,10 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
   /**
    * Containing JpaConfig. null if this JpaClassificationNodeConfig is not
    * the root JpaClassificationNodeConfig.
+   *
+   * <p>transient to disable interpretation by Hibernate.
    */
-  JpaConfig jpaConfig;
+  private transient JpaConfig jpaConfig;
 
   /**
    * Map of child {@link NodeConfig}.
@@ -91,6 +93,10 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
   @Override
   public NodeType getNodeType() {
     return NodeType.CLASSIFICATION;
+  }
+
+  public Map<String, JpaNodeConfig> getMapJpaNodeConfigChild() {
+    return this.mapJpaNodeConfigChild;
   }
 
   @Override

@@ -58,15 +58,6 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
    */
   private int id;
 
-
-  /**
-   * Default constructor.
-   *
-   * <p>Required for JPA.
-   */
-  protected JpaNodeConfig() {
-  }
-
   /**
    * Parent {@link JpaClassificationNodeConfig}.
    */
@@ -95,6 +86,14 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
   private Timestamp timestampLastMod;
 
   /**
+   * Default constructor.
+   *
+   * <p>Required for JPA.
+   */
+  protected JpaNodeConfig() {
+  }
+
+  /**
    * Constructor.
    *
    * @param jpaClassificationNodeConfigParent Parent
@@ -110,9 +109,21 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
     this.mapPluginDefConfig = new LinkedHashMap<PluginKey, PluginDefConfig>();
   }
 
+  public int getId() {
+    return this.id;
+  }
+
+  public JpaClassificationNodeConfig getJpaClassificationNodeConfigParent() {
+    return this.jpaClassificationNodeConfigParent;
+  }
+
   @Override
   public String getName() {
     return this.name;
+  }
+
+  public Map<String, PropertyDefConfig> getMapPropertyDefConfig() {
+    return this.mapPropertyDefConfig;
   }
 
   @Override
@@ -133,6 +144,10 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
     return new ArrayList<PropertyDefConfig>(this.mapPropertyDefConfig.values());
   }
 
+  public Map<PluginKey, PluginDefConfig> getMapPluginDefConfig() {
+    return this.mapPluginDefConfig;
+  }
+
   @Override
   public PluginDefConfig getPluginDefConfig(Class<? extends NodePlugin> classNodePlugin, String pluginId) {
     return this.mapPluginDefConfig.get(new PluginKey(classNodePlugin, pluginId));
@@ -149,6 +164,10 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
     // caller. Ideally, an unmodifiable List view of the Collection returned by
     // Map.values should be returned, but that does not seem possible.
     return new ArrayList<PluginDefConfig>(this.mapPluginDefConfig.values());
+  }
+
+  public Timestamp getTimestampLastMod() {
+    return this.timestampLastMod;
   }
 
   @Override
