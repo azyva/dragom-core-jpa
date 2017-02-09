@@ -45,11 +45,10 @@ public class JpaModuleConfig extends JpaNodeConfig implements ModuleConfig, Muta
   /**
    * Constructor.
    *
-   * @param simpleClassificationNodeConfigParent Parent
-   *   SimpleClassificationNodeConfig.
+   * @param jpaClassificationNodeConfigParent Parent JpaClassificationNodeConfig.
    */
-  JpaModuleConfig(JpaClassificationNodeConfig simpleClassificationNodeConfigParent) {
-    super(simpleClassificationNodeConfigParent);
+  JpaModuleConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent) {
+    super(jpaClassificationNodeConfigParent);
   }
 
   @Override

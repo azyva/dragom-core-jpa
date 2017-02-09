@@ -20,9 +20,11 @@
 package org.azyva.dragom.model.config.impl.jpa;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.persistence.EntityManager;
 
 import org.azyva.dragom.model.config.ClassificationNodeConfig;
 import org.azyva.dragom.model.config.Config;
@@ -69,25 +71,31 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
    * @param jpaConfig JpaConfig holding this root ClassificationNodeConfig.
    */
   JpaClassificationNodeConfig(JpaConfig jpaConfig) {
-    super(null);
+    super(jpaConfig.getEntityManagerFactory());
 
     this.jpaConfig = jpaConfig;
 
-    // LinkedHashMap is used to preserve insertion order.
-    this.mapJpaNodeConfigChild = new LinkedHashMap<String, JpaNodeConfig>();
+    this.mapJpaNodeConfigChild = new HashMap<String, JpaNodeConfig>();
   }
 
   /**
    * Constructor for non-root ClassificationNodeConfig.
    *
-   * @param jpaClassificationNodeConfigParent Parent
-   *   JpaClassificationNodeConfig.
+   * @param jpaClassificationNodeConfigParent Parent JpaClassificationNodeConfig.
    */
   public JpaClassificationNodeConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent) {
     super(jpaClassificationNodeConfigParent);
 
-    // LinkedHashMap is used to preserve insertion order.
-    this.mapJpaNodeConfigChild = new LinkedHashMap<String, JpaNodeConfig>();
+    this.mapJpaNodeConfigChild = new HashMap<String, JpaNodeConfig>();
+  }
+
+  void initRootAfterLoad(JpaConfig jpaConfig) {
+    if (this.getJpaClassificationNodeConfigParent() != null) {
+      throw new RuntimeException("initRootAfterLoad must only be called for the root ClassificationNode.");
+    }
+
+    this.jpaConfig = jpaConfig;
+    this.entityManagerFactory = jpaConfig.getEntityManagerFactory();
   }
 
   @Override
@@ -95,20 +103,24 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
     return NodeType.CLASSIFICATION;
   }
 
-  public Map<String, JpaNodeConfig> getMapJpaNodeConfigChild() {
-    return this.mapJpaNodeConfigChild;
-  }
-
   @Override
   public List<NodeConfig> getListChildNodeConfig() {
+    EntityManager entityManager;
+    JpaClassificationNodeConfig jpaClassificationNodeConfig;
+
+    entityManager = this.entityManagerFactory.createEntityManager();
+
+    jpaClassificationNodeConfig = entityManager.find(JpaClassificationNodeConfig.class, this.id);
+
     // A copy is returned to prevent the internal Map from being modified by the
     // caller. Ideally, an unmodifiable List view of the Collection returned by
     // Map.values should be returned, but that does not seem possible.
-    return new ArrayList<NodeConfig>(this.mapJpaNodeConfigChild.values());
+    return new ArrayList<NodeConfig>(jpaClassificationNodeConfig.mapJpaNodeConfigChild.values());
   }
 
   @Override
   public NodeConfig getNodeConfigChild(String name) {
+ // TODO: ??? lazy load.
     return this.mapJpaNodeConfigChild.get(name);
   }
 

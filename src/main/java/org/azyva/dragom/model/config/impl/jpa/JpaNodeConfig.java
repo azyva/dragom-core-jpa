@@ -21,9 +21,13 @@ package org.azyva.dragom.model.config.impl.jpa;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.persistence.EntityExistsException;
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
 
 import org.azyva.dragom.model.MutableNode;
 import org.azyva.dragom.model.config.DuplicateNodeException;
@@ -45,18 +49,20 @@ import org.azyva.dragom.model.plugin.NodePlugin;
  * @see org.azyva.dragom.model.config.impl.jpa
  */
 public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
+  protected transient EntityManagerFactory entityManagerFactory;
+
   /**
    * Indicates that the {@link JpaNodeConfig} is new and has not been finalized
    * yet. This is the state in which it is after having been created using the
    * create methods of {@link JpaConfig} or
    * {@link JpaClassificationNodeConfig}.
    */
-  protected boolean indNew;
+  protected transient boolean indNew;
 
   /**
    * Id.
    */
-  private int id;
+  protected int id;
 
   /**
    * Parent {@link JpaClassificationNodeConfig}.
@@ -76,7 +82,15 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
   /**
    * Map of {@link PluginDefConfig}.
    */
-  private Map<PluginKey, PluginDefConfig> mapPluginDefConfig;
+  private transient Map<PluginKey, PluginDefConfig> mapPluginDefConfig;
+
+  /**
+   * List of {@link PluginDefConfig}.
+   *
+   * Used for the JPA mapping since it does not seem possible to have null
+   * properties in map keys (@{link PluginKey}).
+   */
+  private List<PluginDefConfig> listPluginDefConfig;
 
   /**
    * Last modification timestamp.
@@ -96,34 +110,51 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
   /**
    * Constructor.
    *
-   * @param jpaClassificationNodeConfigParent Parent
-   *   JpaClassificationNodeConfig.
+   * @param entityManagerFactory EntityManagerFactory.
    */
-  JpaNodeConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent) {
+  protected JpaNodeConfig(EntityManagerFactory entityManagerFactory) {
+    this.entityManagerFactory = entityManagerFactory;
+
     this.indNew = true;
 
+    this.mapPropertyDefConfig = new HashMap<String, PropertyDefConfig>();
+    this.mapPluginDefConfig = new HashMap<PluginKey, PluginDefConfig>();
+  }
+
+  /**
+   * Constructor.
+   *
+   * @param jpaClassificationNodeConfigParent Parent JpaClassificationNodeConfig.
+   */
+  JpaNodeConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent) {
+    this(jpaClassificationNodeConfigParent.getEntityManagerFactory());
+
     this.jpaClassificationNodeConfigParent = jpaClassificationNodeConfigParent;
-
-    // LinkedHashMap are used to preserve insertion order.
-    this.mapPropertyDefConfig = new LinkedHashMap<String, PropertyDefConfig>();
-    this.mapPluginDefConfig = new LinkedHashMap<PluginKey, PluginDefConfig>();
   }
 
-  public int getId() {
-    return this.id;
+  EntityManagerFactory getEntityManagerFactory() {
+    return this.entityManagerFactory;
   }
 
-  public JpaClassificationNodeConfig getJpaClassificationNodeConfigParent() {
+  private void postLoad() {
+    if (this.jpaClassificationNodeConfigParent != null) {
+      this.entityManagerFactory = this.jpaClassificationNodeConfigParent.getEntityManagerFactory();
+    }
+
+    this.mapPluginDefConfig = new HashMap<PluginKey, PluginDefConfig>();
+
+    for(PluginDefConfig pluginDefConfig: this.listPluginDefConfig) {
+      this.mapPluginDefConfig.put(new PluginKey(pluginDefConfig.getClassNodePlugin(), pluginDefConfig.getPluginId()), pluginDefConfig);
+    }
+  }
+
+  protected JpaClassificationNodeConfig getJpaClassificationNodeConfigParent() {
     return this.jpaClassificationNodeConfigParent;
   }
 
   @Override
   public String getName() {
     return this.name;
-  }
-
-  public Map<String, PropertyDefConfig> getMapPropertyDefConfig() {
-    return this.mapPropertyDefConfig;
   }
 
   @Override
@@ -144,10 +175,6 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
     return new ArrayList<PropertyDefConfig>(this.mapPropertyDefConfig.values());
   }
 
-  public Map<PluginKey, PluginDefConfig> getMapPluginDefConfig() {
-    return this.mapPluginDefConfig;
-  }
-
   @Override
   public PluginDefConfig getPluginDefConfig(Class<? extends NodePlugin> classNodePlugin, String pluginId) {
     return this.mapPluginDefConfig.get(new PluginKey(classNodePlugin, pluginId));
@@ -164,10 +191,6 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
     // caller. Ideally, an unmodifiable List view of the Collection returned by
     // Map.values should be returned, but that does not seem possible.
     return new ArrayList<PluginDefConfig>(this.mapPluginDefConfig.values());
-  }
-
-  public Timestamp getTimestampLastMod() {
-    return this.timestampLastMod;
   }
 
   @Override
@@ -270,8 +293,9 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
    *   that may be of interest to the caller.
    */
   protected void extractNodeConfigTransferObject(NodeConfigTransferObject nodeConfigTransferObject, OptimisticLockHandle optimisticLockHandle)
-      throws DuplicateNodeException {
+      throws OptimisticLockException, DuplicateNodeException {
     String previousName;
+    EntityManager entityManager;
 
     this.checkOptimisticLock(optimisticLockHandle, !this.indNew);
 
@@ -279,33 +303,74 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
       throw new RuntimeException("Name of NodeConfigTrnmsferObject must not be null for non-root JpaClassificationNodeConfig.");
     }
 
+    if ((nodeConfigTransferObject.getName() != null) && (this.jpaClassificationNodeConfigParent == null)) {
+      throw new RuntimeException("Name of NodeConfigTrnmsferObject must be null for root JpaClassificationNodeConfig.");
+    }
+
     previousName = this.name;
     this.name = nodeConfigTransferObject.getName();
 
-    if (this.indNew) {
-      if (this.jpaClassificationNodeConfigParent != null) {
-        this.jpaClassificationNodeConfigParent.setJpaNodeConfigChild(this);
+    entityManager = this.entityManagerFactory.createEntityManager();
+
+    try {
+      entityManager.getTransaction().begin();
+
+      this.mapPropertyDefConfig.clear();
+
+      for(PropertyDefConfig propertyDefConfig: nodeConfigTransferObject.getListPropertyDefConfig()) {
+        this.mapPropertyDefConfig.put(propertyDefConfig.getName(),  propertyDefConfig);
       }
-    } else {
-      if ((this.jpaClassificationNodeConfigParent != null) && (!this.name.equals(previousName))) {
-        this.jpaClassificationNodeConfigParent.renameJpaNodeConfigChild(previousName, this.name);
+
+      this.mapPluginDefConfig.clear();
+
+      // Since JPA does not seem to support null properties in Map keys (PluginKey),
+      // we need to go though a simple List for the persistence layer.
+      if (this.listPluginDefConfig == null) {
+        this.listPluginDefConfig = new ArrayList<PluginDefConfig>();
+      } else {
+        this.listPluginDefConfig.clear();
       }
-    }
 
-    this.mapPropertyDefConfig.clear();
+      for(PluginDefConfig pluginDefConfig: nodeConfigTransferObject.getListPluginDefConfig()) {
+        this.mapPluginDefConfig.put(new PluginKey(pluginDefConfig.getClassNodePlugin(), pluginDefConfig.getPluginId()), pluginDefConfig);
+        this.listPluginDefConfig.add(pluginDefConfig);
+      }
 
-    for(PropertyDefConfig propertyDefConfig: nodeConfigTransferObject.getListPropertyDefConfig()) {
-      this.mapPropertyDefConfig.put(propertyDefConfig.getName(),  propertyDefConfig);
-    }
-
-    this.mapPluginDefConfig.clear();
-
-    for(PluginDefConfig pluginDefConfig: nodeConfigTransferObject.getListPluginDefConfig()) {
-      this.mapPluginDefConfig.put(new PluginKey(pluginDefConfig.getClassNodePlugin(), pluginDefConfig.getPluginId()), pluginDefConfig);
-    }
-
-    if (!this.indNew) {
       this.timestampLastMod = new Timestamp(System.currentTimeMillis());;
+
+      if (this.indNew) {
+        JpaNodeConfig jpaNodeConfig;
+
+        try {
+//          if (this.jpaClassificationNodeConfigParent != null) {
+//            entityManager.merge(this.jpaClassificationNodeConfigParent);
+//          }
+
+          jpaNodeConfig = entityManager.merge(this);
+          this.id = jpaNodeConfig.id;
+          entityManager.getTransaction().commit();
+        } catch (EntityExistsException eee) {
+          throw new DuplicateNodeException();
+        }
+
+        if (this.jpaClassificationNodeConfigParent != null) {
+          this.jpaClassificationNodeConfigParent.setJpaNodeConfigChild(this);
+        }
+      } else {
+        try {
+          entityManager.merge(this);
+          entityManager.getTransaction().commit();
+        } catch (EntityExistsException eee) {
+          this.name = previousName;
+          throw new DuplicateNodeException();
+        }
+
+        if ((this.jpaClassificationNodeConfigParent != null) && (!this.name.equals(previousName))) {
+          this.jpaClassificationNodeConfigParent.renameJpaNodeConfigChild(previousName, this.name);
+        }
+      }
+    } finally {
+      entityManager.close();
     }
 
     if (optimisticLockHandle != null) {
@@ -315,9 +380,26 @@ public abstract class JpaNodeConfig implements NodeConfig, MutableNodeConfig {
 
   @Override
   public void delete() {
-    if (!this.indNew && (this.jpaClassificationNodeConfigParent != null)) {
-      this.jpaClassificationNodeConfigParent.removeChildNodeConfig(this.name);
-      this.jpaClassificationNodeConfigParent = null;
+    if (!this.indNew) {
+      JpaNodeConfig jpaNodeConfig;
+
+      EntityManager entityManager;
+
+      entityManager = this.entityManagerFactory.createEntityManager();
+
+      try {
+        jpaNodeConfig = entityManager.find(JpaNodeConfig.class, this.id);
+        entityManager.getTransaction().begin();
+        entityManager.remove(jpaNodeConfig);
+        entityManager.getTransaction().commit();
+      } finally {
+        entityManager.close();
+      }
+
+      if (this.jpaClassificationNodeConfigParent != null) {
+        this.jpaClassificationNodeConfigParent.removeChildNodeConfig(this.name);
+        this.jpaClassificationNodeConfigParent = null;
+      }
     }
   }
 }
