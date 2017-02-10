@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.persistence.EntityManager;
+import javax.persistence.Query;
 
 import org.azyva.dragom.model.config.ClassificationNodeConfig;
 import org.azyva.dragom.model.config.Config;
@@ -47,10 +48,8 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
   /**
    * Containing JpaConfig. null if this JpaClassificationNodeConfig is not
    * the root JpaClassificationNodeConfig.
-   *
-   * <p>transient to disable interpretation by Hibernate.
    */
-  private transient JpaConfig jpaConfig;
+  private JpaConfig jpaConfig;
 
   /**
    * Map of child {@link NodeConfig}.
@@ -58,44 +57,25 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
   private Map<String, JpaNodeConfig> mapJpaNodeConfigChild;
 
   /**
-   * Default constructor.
-   *
-   * <p>Required for JPA.
-   */
-  protected JpaClassificationNodeConfig() {
-  }
-
-  /**
    * Constructor for root ClassificationNodeConfig.
    *
+   * @param nodeData NodeData. null for new JpaClassificationNodeConfig.
    * @param jpaConfig JpaConfig holding this root ClassificationNodeConfig.
    */
-  JpaClassificationNodeConfig(JpaConfig jpaConfig) {
-    super(jpaConfig.getEntityManagerFactory());
+  JpaClassificationNodeConfig(JpaConfig jpaConfig, NodeData nodeData) {
+    super(jpaConfig.getEntityManagerFactory(), nodeData);
 
     this.jpaConfig = jpaConfig;
-
-    this.mapJpaNodeConfigChild = new HashMap<String, JpaNodeConfig>();
   }
 
   /**
    * Constructor for non-root ClassificationNodeConfig.
    *
+   * @param nodeData NodeData. null for new JpaClassificationNodeConfig.
    * @param jpaClassificationNodeConfigParent Parent JpaClassificationNodeConfig.
    */
-  public JpaClassificationNodeConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent) {
-    super(jpaClassificationNodeConfigParent);
-
-    this.mapJpaNodeConfigChild = new HashMap<String, JpaNodeConfig>();
-  }
-
-  void initRootAfterLoad(JpaConfig jpaConfig) {
-    if (this.getJpaClassificationNodeConfigParent() != null) {
-      throw new RuntimeException("initRootAfterLoad must only be called for the root ClassificationNode.");
-    }
-
-    this.jpaConfig = jpaConfig;
-    this.entityManagerFactory = jpaConfig.getEntityManagerFactory();
+  public JpaClassificationNodeConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent, NodeData nodeData) {
+    super(jpaClassificationNodeConfigParent, nodeData);
   }
 
   @Override
@@ -103,37 +83,63 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
     return NodeType.CLASSIFICATION;
   }
 
+  @SuppressWarnings("unchecked")
+  private void ensureCreateChildNodeConfig() {
+    if (this.mapJpaNodeConfigChild == null) {
+      EntityManager entityManager;
+      Query query;
+      List<NodeData> listNodeData;
+
+      entityManager = this.entityManagerFactory.createEntityManager();
+
+      query = entityManager.createNamedQuery("getChildNodeData");
+      query.setParameter("parentNodeData", this.nodeData);
+
+      listNodeData = query.getResultList();
+
+      this.mapJpaNodeConfigChild = new HashMap<String, JpaNodeConfig>();
+
+      for(NodeData nodeData: listNodeData) {
+        if (nodeData.getType() == 'C') {
+          this.mapJpaNodeConfigChild.put(nodeData.getName(), new JpaClassificationNodeConfig(this, nodeData));
+        } else {
+          this.mapJpaNodeConfigChild.put(nodeData.getName(), new JpaModuleConfig(this, nodeData));
+        }
+      }
+    }
+  }
+
   @Override
-  public List<NodeConfig> getListChildNodeConfig() {
-    EntityManager entityManager;
-    JpaClassificationNodeConfig jpaClassificationNodeConfig;
-
-    entityManager = this.entityManagerFactory.createEntityManager();
-
-    jpaClassificationNodeConfig = entityManager.find(JpaClassificationNodeConfig.class, this.id);
+  public synchronized List<NodeConfig> getListChildNodeConfig() {
+    this.ensureCreateChildNodeConfig();
 
     // A copy is returned to prevent the internal Map from being modified by the
     // caller. Ideally, an unmodifiable List view of the Collection returned by
     // Map.values should be returned, but that does not seem possible.
-    return new ArrayList<NodeConfig>(jpaClassificationNodeConfig.mapJpaNodeConfigChild.values());
+    return new ArrayList<NodeConfig>(this.mapJpaNodeConfigChild.values());
   }
 
   @Override
-  public NodeConfig getNodeConfigChild(String name) {
- // TODO: ??? lazy load.
+  public synchronized NodeConfig getNodeConfigChild(String name) {
+    this.ensureCreateChildNodeConfig();
+
     return this.mapJpaNodeConfigChild.get(name);
   }
 
   @Override
-  public void setNodeConfigTransferObject(NodeConfigTransferObject NodeConfigTransferObject, OptimisticLockHandle optimisticLockHandle) throws OptimisticLockException, DuplicateNodeException {
+  public synchronized void setNodeConfigTransferObject(NodeConfigTransferObject NodeConfigTransferObject, OptimisticLockHandle optimisticLockHandle) throws OptimisticLockException, DuplicateNodeException {
+    boolean indNew;
+
+    // Must check before calling extractNodeConfigTransferObject since the latter sets
+    // nodeData.
+    indNew = (this.nodeData == null);
+
     this.extractNodeConfigTransferObject(NodeConfigTransferObject, optimisticLockHandle);
 
-    if (this.indNew) {
+    if (indNew) {
       if (this.jpaConfig != null) {
         this.jpaConfig.setJpaClassificationNodeConfigRoot(this);
       }
-
-      this.indNew = false;
     }
   }
 
@@ -147,7 +153,9 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
    * @throws DuplicateNodeException When a JpaNodeConfig already exists with the
    *   same name.
    */
-  void setJpaNodeConfigChild(JpaNodeConfig jpaNodeConfigChild) throws DuplicateNodeException {
+  synchronized void setJpaNodeConfigChild(JpaNodeConfig jpaNodeConfigChild) throws DuplicateNodeException {
+    // No need to ensure the child NodeConfig's are loaded since it was done in the
+    // create method.
     if (this.mapJpaNodeConfigChild.containsKey(jpaNodeConfigChild.getName())) {
       throw new DuplicateNodeException();
     }
@@ -166,7 +174,7 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
    * @throws DuplicateNodeException When a JpaNodeConfig already exists with the
    *   same name.
    */
-  void renameJpaNodeConfigChild(String currentName, String newName) throws DuplicateNodeException {
+  synchronized void renameJpaNodeConfigChild(String currentName, String newName) throws DuplicateNodeException {
     if (!this.mapJpaNodeConfigChild.containsKey(currentName)) {
       throw new RuntimeException("JpaNodeConfig with current name " + currentName + " not found.");
     }
@@ -185,7 +193,7 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
    *
    * @param childNodeName Name of the child NodeConig.
    */
-  void removeChildNodeConfig(String childNodeName) {
+  synchronized void removeChildNodeConfig(String childNodeName) {
     if (this.mapJpaNodeConfigChild.remove(childNodeName) == null) {
       throw new RuntimeException("JpaNodeConfig with name " + childNodeName + " not found.");
     }
@@ -197,7 +205,7 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
    * within a {@link Config}.
    */
   @Override
-  public void delete() {
+  public synchronized void delete() {
     super.delete();
 
     if (this.jpaConfig != null) {
@@ -208,11 +216,19 @@ public class JpaClassificationNodeConfig extends JpaNodeConfig implements Classi
 
   @Override
   public MutableClassificationNodeConfig createChildMutableClassificationNodeConfig() {
-    return new JpaClassificationNodeConfig(this);
+    // We ensure the child NodeConfig are loaded before since otherwise it causes a
+    // conflict when the new child NodeConfig is finalized.
+    this.ensureCreateChildNodeConfig();
+
+    return new JpaClassificationNodeConfig(this, null);
   }
 
   @Override
   public MutableModuleConfig createChildMutableModuleConfig() {
-    return new JpaModuleConfig(this);
+    // We ensure the child NodeConfig are loaded before since otherwise it causes a
+    // conflict when the new child NodeConfig is finalized.
+    this.ensureCreateChildNodeConfig();
+
+    return new JpaModuleConfig(this, null);
   }
 }

@@ -35,20 +35,13 @@ import org.azyva.dragom.model.config.OptimisticLockHandle;
  */
 public class JpaModuleConfig extends JpaNodeConfig implements ModuleConfig, MutableModuleConfig  {
   /**
-   * Default constructor.
-   *
-   * <p>Required for JPA.
-   */
-  protected JpaModuleConfig() {
-  }
-
-  /**
    * Constructor.
    *
+   * @param nodeData NodeData. null for new JpaModuleConfig.
    * @param jpaClassificationNodeConfigParent Parent JpaClassificationNodeConfig.
    */
-  JpaModuleConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent) {
-    super(jpaClassificationNodeConfigParent);
+  JpaModuleConfig(JpaClassificationNodeConfig jpaClassificationNodeConfigParent, NodeData nodeData) {
+    super(jpaClassificationNodeConfigParent, nodeData);
   }
 
   @Override
@@ -57,9 +50,7 @@ public class JpaModuleConfig extends JpaNodeConfig implements ModuleConfig, Muta
   }
 
   @Override
-  public void setNodeConfigTransferObject(NodeConfigTransferObject nodeConfigTransferObject, OptimisticLockHandle optimisticLockHandle) throws OptimisticLockException, DuplicateNodeException {
+  public synchronized void setNodeConfigTransferObject(NodeConfigTransferObject nodeConfigTransferObject, OptimisticLockHandle optimisticLockHandle) throws OptimisticLockException, DuplicateNodeException {
     this.extractNodeConfigTransferObject(nodeConfigTransferObject, optimisticLockHandle);
-
-    this.indNew = false;
   }
 }

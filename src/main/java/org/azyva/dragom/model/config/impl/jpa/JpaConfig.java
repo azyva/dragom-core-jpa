@@ -33,12 +33,6 @@ import org.azyva.dragom.model.config.MutableConfig;
 /**
  * JPA implementation of {@link Config} and {@link MutableConfig}.
  *
- * <p>Note that because of the fact that we need to comply with the Dragom
- * {@link MutableConfig} API, the pattern used for accessing the DB with JPA does
- * not always follow the typical DAO pattern. Also, we sometimes have to fight JPA
- * to make it do what we want since the objects returned to the caller must remain
- * valid even if detached from the EntityManager.
- *
  * @author David Raymond
  * @see org.azyva.dragom.model.config.impl.jpa
  */
@@ -62,6 +56,7 @@ public class JpaConfig implements Config, MutableConfig {
   public ClassificationNodeConfig getClassificationNodeConfigRoot() {
     EntityManager entityManager;
     Query query;
+    NodeData nodeData;
     JpaClassificationNodeConfig jpaClassificationNodeConfig;
 
     if (this.jpaClassificationNodeConfigRoot != null) {
@@ -71,19 +66,14 @@ public class JpaConfig implements Config, MutableConfig {
     entityManager = this.entityManagerFactory.createEntityManager();
 
     try {
-      query = entityManager.createNamedQuery("getJpaClassificationNodeConfigRoot");
+      query = entityManager.createNamedQuery("getRootNodeData");
 
-      this.jpaClassificationNodeConfigRoot = (JpaClassificationNodeConfig)query.getSingleResult();
+      nodeData = (NodeData)query.getSingleResult();
+
+      this.jpaClassificationNodeConfigRoot = new JpaClassificationNodeConfig(this, nodeData);
     } catch (NoResultException nre) {
     } finally {
       entityManager.close();
-    }
-
-    if (this.jpaClassificationNodeConfigRoot != null) {
-      // We cannot do this in a postLoad JPA event method since the root
-      // JpaClassiicationNodeConfig needs to refer to its JpaConfig, which is not
-      // available, other than here.
-      this.jpaClassificationNodeConfigRoot.initRootAfterLoad(this);
     }
 
     return this.jpaClassificationNodeConfigRoot;
@@ -109,6 +99,6 @@ public class JpaConfig implements Config, MutableConfig {
 
   @Override
   public MutableClassificationNodeConfig createMutableClassificationNodeConfigRoot() {
-    return new JpaClassificationNodeConfig(this);
+    return new JpaClassificationNodeConfig(this, null);
   }
 }
