@@ -29,6 +29,18 @@ import org.azyva.dragom.model.config.PluginDefConfig;
 import org.azyva.dragom.model.config.PluginKey;
 import org.azyva.dragom.model.config.PropertyDefConfig;
 
+/**
+ * Main class which represents entities in the DB.
+ *
+ * <p>It is not possible to directly use {@link JpaNodeConfig},
+ * {@link JpaClassificationNodeConfig} and {@link JpaModuleConfig} as mapped DB
+ * entities since these are meant to remain alive from the caller's point of view,
+ * and mapped DB entities are meant to be valid within an EntityManager context
+ * only. Mapped DB entities can be detached from the EntityManager, but it is not
+ * possible to re-attach them.
+ *
+ * @author David Raymond
+ */
 class NodeData {
   /**
    * Id.
@@ -39,7 +51,12 @@ class NodeData {
    * Parent NodeData.
    */
   private NodeData nodeDataParent;
-//private List<NodeData> child;
+
+  //TODO: I think this used to be mapped as a one-to-many relationship, but I could
+  // not make the cascade delete work properly. I do not recall the details. I
+  // decided to only have the direct parent relationship.
+  //private List<NodeData> child;
+
   /**
    * Node type.
    *
