@@ -31,12 +31,12 @@ import org.azyva.dragom.model.Model;
 import org.azyva.dragom.model.ModelFactory;
 import org.azyva.dragom.model.config.impl.jpa.JpaConfig;
 import org.azyva.dragom.model.config.impl.xml.XmlConfig;
-import org.azyva.dragom.model.impl.simple.SimpleModel;
+import org.azyva.dragom.model.impl.DefaultModel;
 import org.azyva.dragom.util.Util;
 
 /**
  * {@link ModelFactory} implementation that loads a {@link Model} from
- * configuration stored in a DB using {@link JpaConfig}. {@link SimpleModel} is
+ * configuration stored in a DB using {@link JpaConfig}. {@link DefaultModel} is
  * used as the Model implementation.
  * <p>
  * A static Map of ??? to Model instances is used in order to reuse Model
@@ -109,7 +109,7 @@ public class JpaModelFactory implements ModelFactory {
       }
 
       xmlConfig = XmlConfig.load(urlXmlConfig);
-      model = new SimpleModel(xmlConfig, propertiesInit);
+      model = new DefaultModel(xmlConfig, propertiesInit);
 
       JpaModelFactory.mapUrlXmlConfigModel.put(urlXmlConfig, model);
     }
