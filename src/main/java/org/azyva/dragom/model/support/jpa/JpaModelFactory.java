@@ -61,7 +61,7 @@ public class JpaModelFactory implements ModelFactory {
    *
    * <p>As a convenience, this can also be a file path, relative or absolute.
    */
-  private static final String INIT_PROP_URL_MODEL = "PERSISTENCE_UNIT";
+  private static final String INIT_PROPERTY_URL_MODEL = "PERSISTENCE_UNIT";
 
   /**
    * Map of URLs (of {@link XmlConfig} XML configuration) to Model.
